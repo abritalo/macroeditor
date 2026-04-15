@@ -43,7 +43,6 @@ arquivos .ini junto — caso contrário as macros e configurações
 salvas serão perdidas.
 
 
-================================================================
   FUNCIONALIDADES
 ================================================================
 
@@ -186,7 +185,6 @@ Acessadas pelo botão "Configurações" na tela principal:
                              Padrão: 150 ms.
 
 
-================================================================
   RESUMO RÁPIDO DE USO
 ================================================================
 
