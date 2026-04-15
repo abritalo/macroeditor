@@ -1,5 +1,4 @@
-================================================================
-  MacroEditor — Documentação e Guia de Uso
+ MacroEditor — Documentação e Guia de Uso
 ================================================================
 
 DEPENDÊNCIA OBRIGATÓRIA
