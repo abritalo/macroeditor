@@ -974,6 +974,8 @@ RunMacroLoop(macroName) {
     delay := 0
     rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "150")
     delay := (rawDelay != "") ? Integer(rawDelay) : 150
+    if delay < 1
+        delay := 1
 
     if Trim(m["window"]) = "" {
         RunningLoops[macroName] := false
@@ -1039,6 +1041,8 @@ ExecuteMacroOnce(macroName) {
     Send "{Shift up}{Ctrl up}{Alt up}{LWin up}{RWin up}"
     rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "150")
     delay := (rawDelay != "") ? Integer(rawDelay) : 150
+    if delay < 1
+        delay := 1
     RunMacroSteps(m, delay)
 }
 
@@ -1136,8 +1140,10 @@ RunMacroSteps(m, delay) {
                 }
             }
         }
-        if delay > 0
+        if delay > 1
             Sleep delay
+        else if delay = 1
+            Sleep 0
     }
 }
 
@@ -1547,9 +1553,12 @@ OpenSettings() {
 
 SaveSettings(g, cbStartup, cbAot, eDelay) {
     global ConfigFile, MainGui
+    stepDelay := Integer(eDelay.Value)
+    if stepDelay < 1
+        stepDelay := 1
     IniWrite cbStartup.Value, ConfigFile, "Settings", "Startup"
     IniWrite cbAot.Value,     ConfigFile, "Settings", "AlwaysOnTop"
-    IniWrite eDelay.Value,    ConfigFile, "Settings", "StepDelay"
+    IniWrite stepDelay,       ConfigFile, "Settings", "StepDelay"
     if cbStartup.Value = 1 {
         CreateStartupShortcut()
     } else
