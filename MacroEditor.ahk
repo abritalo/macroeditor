@@ -74,6 +74,7 @@ InstallKeybdHook
 InstallMouseHook
 
 ApplyHotkeys()
+ApplyKDEConnectAliases()
 
 ; Recria o atalho de startup automaticamente sempre que o script iniciar
 ; e a opcao Iniciar com Windows estiver ativa no INI.
@@ -128,17 +129,17 @@ ShowMainGui(*) {
     MainGui.SetFont("s10", "Segoe UI")
     MainGui.Add("Text", "x16 y14 w300", "MacroEditor")
     MainGui.SetFont("s9 cGray")
-    MainGui.Add("Text", "x16 y34 w420", "Sistema de macros para Windows — rodando na bandeja")
+    MainGui.Add("Text", "x16 y34 w420", "Sistema de macros para Windows")
     MainGui.SetFont("s8 cGray")
     MainGui.Add("Text", "x516 y14 w160 +Right", "Por Italo Brito")
     MainGui.SetFont("s9 cBlack")
     MainGui.Add("Button", "x16 y60 w130 h28",  "Gravar Macro").OnEvent("Click", (*) => OpenRecordDialog())
-    MainGui.Add("Button", "x152 y60 w120 h28", "Configurações").OnEvent("Click", (*) => OpenSettingsDialog())
+    MainGui.Add("Button", "x152 y60 w120 h28", "Recarregar lista").OnEvent("Click", (*) => ReloadMacroList())
+    MainGui.Add("Button", "x278 y60 w120 h28", "Configurações").OnEvent("Click", (*) => OpenSettingsDialog())
     MainGui.Add("Text", "x16 y98 w660 h1 +0x10")
 
     MainGui.Add("Text", "x16 y108", "Macros salvas:")
-    ; Sem -Multi para permitir selecao multipla (Shift+Clique / Ctrl+Clique)
-    MacroLV := MainGui.Add("ListView", "x16 y126 w660 h210", ["Nome","Keybind","Janela alvo","Passos","Repeticao"])
+    MacroLV := MainGui.Add("ListView", "x16 y126 w660 h210 +Multi", ["Nome","Keybind","Janela alvo","Passos","Repeticao"])
     MacroLV.ModifyCol(1, 160)
     MacroLV.ModifyCol(2, 120)
     MacroLV.ModifyCol(3, 175)
@@ -264,7 +265,7 @@ OpenEditDialog() {
     firstRow := 0
     row := 0
     loop {
-        row := MacroLV.GetNext(row, "F")
+        row := MacroLV.GetNext(row, "Focused")
         if !row
             break
         selCount++
@@ -302,6 +303,13 @@ ReturnToMain() {
         MainGui.Show()
         RefreshList()
     }
+}
+
+ReloadMacroList() {
+    LoadMacros()
+    ApplyHotkeys()
+    RefreshList()
+    ApplyKDEConnectAliases()
 }
 
 ; ============================================================
@@ -860,7 +868,7 @@ DeleteMacro() {
     selectedNames := []
     row := 0
     loop {
-        row := MacroLV.GetNext(row, "F")
+        row := MacroLV.GetNext(row)
         if !row
             break
         selectedNames.Push(MacroLV.GetText(row, 1))
@@ -881,7 +889,7 @@ DeleteMacro() {
 
 RunSelected() {
     global MacroLV
-    row := MacroLV.GetNext(0, "F")
+    row := MacroLV.GetNext(0)
     if !row {
         MsgBox "O botão Executar serve para acionar manualmente uma macro salva.`n`nSelecione uma macro na lista e clique em Executar novamente.", "Executar Macro", "Icon!"
         return
@@ -922,12 +930,39 @@ ApplyHotkeys(*) {
         if hk = "" || hk = "Nenhuma"
             continue
         fn := MacroHotkeyHandler.Bind(name)
+        hkReg := hk
+        keyOnly := RegExReplace(hk, "[<>^!#+*~$]", "")
+        isPgKey := (keyOnly = "PgUp" || keyOnly = "PgDn")
+        if isPgKey && !InStr(hk, "~")
+            hkReg := "~" . hk
         try {
-            HotKey hk, fn
-            HotKey hk, "On"
-            ActiveHKs[hk] := fn
+            HotKey hkReg, fn
+            HotKey hkReg, "On"
+            ActiveHKs[hkReg] := fn
+        }
+        ; KDE Connect envia NumpadPgUp/NumpadPgDn em vez de PgUp/PgDn.
+        ; SEM ~ para consumir a tecla e nao rolar a pagina.
+        aliasHk := ""
+        if keyOnly = "PgUp" && !RegExMatch(hk, "[<>^!#+]")
+            aliasHk := "NumpadPgUp"
+        else if keyOnly = "PgDn" && !RegExMatch(hk, "[<>^!#+]")
+            aliasHk := "NumpadPgDn"
+        if aliasHk != "" {
+            try {
+                HotKey aliasHk, fn
+                HotKey aliasHk, "On"
+                ActiveHKs[aliasHk] := fn
+            }
         }
     }
+}
+
+; KDE Connect envia PgUp/PgDn como teclas reais do teclado.
+; ApplyHotkeys ja registra essas keybinds com prefixo ~ (passthrough),
+; entao nao e necessario nenhum hook adicional aqui.
+; Esta funcao existe apenas para manter a chamada no ReloadMacroList legivel.
+ApplyKDEConnectAliases() {
+    ; Noop — logica embutida em ApplyHotkeys via prefixo ~ para PgUp/PgDn
 }
 
 ; Handler unificado da keybind.
@@ -971,9 +1006,8 @@ RunMacroLoop(macroName) {
     repeatMode := m.Has("repeatMode") ? m["repeatMode"] : "none"
     repeatVal  := m.Has("repeatVal")  ? m["repeatVal"]  : 1
     repeatWait := m.Has("repeatWait") ? m["repeatWait"] : 500
-    delay := 0
-    rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "150")
-    delay := (rawDelay != "") ? Integer(rawDelay) : 150
+    rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "1")
+    delay := (rawDelay != "") ? Integer(rawDelay) : 1
     if delay < 1
         delay := 1
 
@@ -1039,8 +1073,8 @@ ExecuteMacroOnce(macroName) {
     ; "Get an app to open this 'title' link" no Windows.
 
     Send "{Shift up}{Ctrl up}{Alt up}{LWin up}{RWin up}"
-    rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "150")
-    delay := (rawDelay != "") ? Integer(rawDelay) : 150
+    rawDelay := IniRead(ConfigFile, "Settings", "StepDelay", "1")
+    delay := (rawDelay != "") ? Integer(rawDelay) : 1
     if delay < 1
         delay := 1
     RunMacroSteps(m, delay)
@@ -1154,13 +1188,13 @@ RunMacroSteps(m, delay) {
 LoadClickerCfg() {
     global ConfigFile, ClickerCfg, ClickerHK, ClickerEnabled
     ClickerCfg := Map()
-    ClickerCfg["hk"]         := IniRead(ConfigFile, "Clicker", "Hotkey",      "F3")
-    ClickerCfg["hkDisplay"]  := IniRead(ConfigFile, "Clicker", "HotkeyDisp",  "F3")
+    ClickerCfg["hk"]         := IniRead(ConfigFile, "Clicker", "Hotkey",      "F9")
+    ClickerCfg["hkDisplay"]  := IniRead(ConfigFile, "Clicker", "HotkeyDisp",  "F9")
     ClickerCfg["repeatMode"] := IniRead(ConfigFile, "Clicker", "RepeatMode",  "infinite")
     rVal := Integer(IniRead(ConfigFile, "Clicker", "RepeatVal", "10"))
     ClickerCfg["repeatVal"]  := (rVal >= 1) ? rVal : 10
-    iVal := Integer(IniRead(ConfigFile, "Clicker", "Interval",  "100"))
-    ClickerCfg["interval"]   := (iVal >= 1) ? iVal : 100
+    iVal := Integer(IniRead(ConfigFile, "Clicker", "Interval",  "1"))
+    ClickerCfg["interval"]   := (iVal >= 1) ? iVal : 1
     ClickerEnabled := (IniRead(ConfigFile, "Clicker", "Enabled", "1") = "1")
     ClickerHK := ClickerCfg["hk"]
     ApplyClickerHotkey()
@@ -1341,9 +1375,9 @@ SaveClickerCfgInline(g, eHkDisp, eHkAhk, rbInfinite, rbTimes, rbMinutes, eVal, e
     hk     := Trim(eHkAhk.Value)
     hkDisp := Trim(eHkDisp.Value)
     if hk = ""
-        hk := "F3"
+        hk := "F9"
     if hkDisp = ""
-        hkDisp := "F3"
+        hkDisp := "F9"
 
     mode := "infinite"
     if rbTimes.Value
@@ -1356,7 +1390,7 @@ SaveClickerCfgInline(g, eHkDisp, eHkAhk, rbInfinite, rbTimes, rbMinutes, eVal, e
     val := (valStr != "") ? Integer(valStr) : 10
     if val <= 0
         val := 10
-    ivl := (ivlStr != "") ? Integer(ivlStr) : 100
+    ivl := (ivlStr != "") ? Integer(ivlStr) : 1
     if ivl <= 0
         ivl := 1
 
@@ -1529,7 +1563,7 @@ CKB_Insert(kb, ownerGui, eHkDisp, eHkAhk, cbCtrl, cbAlt, cbShift, eCaptured, sto
 OpenSettings() {
     global ConfigFile
     startupVal := IniRead(ConfigFile, "Settings", "Startup",      "0")
-    delayVal   := IniRead(ConfigFile, "Settings", "StepDelay",    "150")
+    delayVal   := IniRead(ConfigFile, "Settings", "StepDelay",    "1")
     aotVal     := IniRead(ConfigFile, "Settings", "AlwaysOnTop",  "1")
 
     g := Gui("+AlwaysOnTop", "Configurações - MacroEditor")
